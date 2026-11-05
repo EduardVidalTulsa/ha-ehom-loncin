@@ -1,0 +1,45 @@
+{
+  "config": {
+    "step": {
+      "confirm": {
+        "description": "Vols afegir el EHOM/Loncin \"{name}\"?"
+      },
+      "user": {
+        "data": {
+          "address": "Dispositiu"
+        }
+      }
+    },
+    "abort": {
+      "no_devices_found": "No s'ha trobat cap EHOM/Loncin a prop",
+      "already_configured": "Aquest dispositiu ja està configurat"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "soc": { "name": "Bateria" },
+      "input_power": { "name": "Potència entrada" },
+      "output_power": { "name": "Potència sortida" },
+      "ac_total_input_power": { "name": "Entrada AC" },
+      "ac_total_output_power": { "name": "Sortida AC" },
+      "dc_total_input_power": { "name": "Entrada DC" },
+      "dc_total_output_power": { "name": "Sortida DC" },
+      "device_temperature": { "name": "Temperatura" },
+      "residue_time": { "name": "Temps restant" },
+      "charge_left_time": { "name": "Temps fins càrrega completa" },
+      "charge_status": { "name": "Estat de càrrega" },
+      "work_status": { "name": "Estat de funcionament" },
+      "alarm": { "name": "Alarma" },
+      "ac_charge_mode": { "name": "Límit potència càrrega AC" }
+    },
+    "switch": {
+      "ac_output_switch": { "name": "Sortida AC" },
+      "dc_output_switch": { "name": "Sortida DC" },
+      "usb_output_switch": { "name": "Sortida USB" }
+    },
+    "select": {
+      "charge_limit": { "name": "Límit càrrega" },
+      "discharge_limit": { "name": "Límit descàrrega" }
+    }
+  }
+}
