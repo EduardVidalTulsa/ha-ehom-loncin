@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import zlib
+from datetime import timedelta
 
 from bleak import BleakClient
 from bleak.backends.device import BLEDevice
@@ -13,7 +14,7 @@ from bleak_retry_connector import establish_connection
 
 from homeassistant.components import bluetooth
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
     BOOL_FIELDS,
@@ -88,7 +89,15 @@ class EhomCoordinator(DataUpdateCoordinator[dict[str, int]]):
     """Owns the BLE connection and the latest parsed device data."""
 
     def __init__(self, hass: HomeAssistant, address: str) -> None:
-        super().__init__(hass, _LOGGER, name="EHOM Loncin", update_interval=None)
+        # Sensors are push-updated from BLE notifications, not polled, but
+        # the connection itself drops on its own from time to time (the
+        # device's BLE stack is flaky - see coordinator.async_set_field).
+        # Nothing used to notice a dropped connection until the next
+        # switch/select write, so sensors (temperature included) would
+        # silently go stale for arbitrarily long stretches. Poll on a
+        # short interval just to make sure we're connected; the fetched
+        # data itself still comes from notifications, not this poll.
+        super().__init__(hass, _LOGGER, name="EHOM Loncin", update_interval=timedelta(seconds=30))
         self.address = address
         self._client: BleakClient | None = None
         self.data: dict[str, int] = {}
@@ -96,6 +105,15 @@ class EhomCoordinator(DataUpdateCoordinator[dict[str, int]]):
     @property
     def connected(self) -> bool:
         return self._client is not None and self._client.is_connected
+
+    async def _async_update_data(self) -> dict[str, int]:
+        """Make sure the BLE connection (and thus the notify stream) is alive."""
+        try:
+            if not self.connected:
+                await self.async_connect()
+        except (BleakError, RuntimeError) as err:
+            raise UpdateFailed(f"Could not keep EHOM {self.address} connected: {err}") from err
+        return self.data
 
     async def async_connect(self) -> None:
         if self.connected:

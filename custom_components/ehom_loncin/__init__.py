@@ -16,12 +16,12 @@ type EhomConfigEntry = ConfigEntry[EhomCoordinator]
 
 async def async_setup_entry(hass: HomeAssistant, entry: EhomConfigEntry) -> bool:
     coordinator = EhomCoordinator(hass, entry.data[CONF_ADDRESS])
-    try:
-        await coordinator.async_connect()
-    except RuntimeError:
-        # Device not in range right now; platforms will retry via the
-        # coordinator the next time a write/read is attempted.
-        pass
+    # Raises ConfigEntryNotReady on failure (e.g. device not in range right
+    # now), which makes Home Assistant retry setup on its own schedule -
+    # this also arms the coordinator's periodic connection keep-alive (see
+    # coordinator.py), so a connection dropped later gets re-established
+    # without needing a switch/select write to trigger it.
+    await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
