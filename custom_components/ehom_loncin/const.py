@@ -105,15 +105,45 @@ BOOL_FIELDS = {
     "usb_switch",
 }
 
-# --- Write: "set field" command (frame type 0x32 = 50 decimal) -------
-# byte[offset] = 1 (field-present flag), byte[offset+1] = value.
-# Offsets match the FIELDS_03 positions above (same absolute layout),
-# confirmed from the app's frame-builder (SendBluetoothData.l()) but
-# NOT yet verified against a live device - test cautiously.
-CMD_SET_FIELD = 0x32
+# --- Write: "set field" commands ---------------------------------------
+# Confirmed 2026-11-07 from a real Android btsnoop_hci.log capture of the
+# official Loncin app toggling AC/DC and the light mode. Each writable
+# "page" has its own frame type and its own compact field layout - this
+# is NOT the single uniform command the field offsets were originally
+# guessed to be; every (offset, value) pair below is byte[offset] = 1
+# (field-present flag), byte[offset + 1] = value, exactly as before, but
+# the command byte and offsets differ per page:
+#
+#   type 0x33 (output switches, mirrors read type 0x03): total frame
+#   length 35 bytes. dc_switch flag at byte 12, ac_switch flag at byte 14.
+#   type 0x31 (light mode, mirrors read type 0x01): total frame length
+#   28 bytes. light flag at byte 16.
+#
+# The write characteristic accepts this as a BLE "Write Request" (with
+# response) once the MTU is correctly raised - this matches the app
+# exactly and is more reliable than the previously-assumed "Write
+# Command" workaround.
+CMD_SET_OUTPUT = 0x33
+FRAME_LEN_OUTPUT = 35
 OFFSET_DC_SWITCH = 12
-OFFSET_AC_SWITCH = 13
-OFFSET_USB_SWITCH = 14
+OFFSET_AC_SWITCH = 14
+
+CMD_SET_LIGHT = 0x31
+FRAME_LEN_LIGHT = 28
+OFFSET_LIGHT = 16
+
+LIGHT_MODES = {"off": 0, "low": 1, "high": 2, "sos": 3}
+
+# type 0x32 (mirrors read type 0x02: power flow / charge limits) has NOT
+# been confirmed against a real capture - the offsets below are carried
+# over from the original (also unverified) guess and are kept only so
+# charge_upper/discharge_lower don't regress further; frame_len was
+# bumped from the old guess of 25 to fit offset 25 + 1 without going out
+# of bounds. Treat this command as experimental until it's captured.
+CMD_SET_POWER = 0x32
+FRAME_LEN_POWER = 27
+OFFSET_CHARGE_LIMIT = 24
+OFFSET_DISCHARGE_LIMIT = 25
 
 CHARGE_LIMIT_OPTIONS = [80, 85, 90, 95, 100]
 DISCHARGE_LIMIT_OPTIONS = [0, 5, 10, 15, 20]

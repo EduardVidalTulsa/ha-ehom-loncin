@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import EhomConfigEntry
-from .const import DOMAIN, OFFSET_AC_SWITCH, OFFSET_DC_SWITCH
+from .const import CMD_SET_OUTPUT, DOMAIN, FRAME_LEN_OUTPUT, OFFSET_AC_SWITCH, OFFSET_DC_SWITCH
 
 SWITCHES: tuple[tuple[str, str, int], ...] = (
     # (data_key, translation_key, set-field offset)
@@ -59,7 +59,7 @@ class EhomOutputSwitch(CoordinatorEntity, SwitchEntity):
         return self.coordinator.data.get(self._data_key)
 
     async def async_turn_on(self, **kwargs) -> None:
-        await self.coordinator.async_set_field(self._offset, 1)
+        await self.coordinator.async_set_field(CMD_SET_OUTPUT, FRAME_LEN_OUTPUT, self._offset, 1)
 
     async def async_turn_off(self, **kwargs) -> None:
-        await self.coordinator.async_set_field(self._offset, 0)
+        await self.coordinator.async_set_field(CMD_SET_OUTPUT, FRAME_LEN_OUTPUT, self._offset, 0)

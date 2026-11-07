@@ -6,12 +6,15 @@ portable power stations that use the "Loncin" app (package
 device directly over BLE from Home Assistant's own Bluetooth adapter(s),
 reusing whatever passive/active Bluetooth proxy setup you already have.
 
-The protocol was reverse engineered by decompiling the official Loncin
-Android app (no traffic capture was available). **Reading device data
-works reliably. Writing (turning outputs on/off, changing charge
-limits) does not work reliably yet** - see [Known issues](#known-issues)
-below. Contributions, especially a real BLE packet capture of a working
-write from the official app, are very welcome.
+The protocol was first reverse engineered by decompiling the official
+Loncin Android app, then corrected and confirmed against a real
+`btsnoop_hci.log` capture of that app toggling AC/DC and the light.
+**Reading device data and the AC/DC output switches are confirmed
+working.** The device's BLE write occasionally rejects an
+otherwise-correct frame with ATT error `0x0E` ("Unlikely Error") right
+after a fresh connection - `coordinator.py` retries a few times, which
+is enough in practice. See [Known issues](#known-issues) for what's
+still unconfirmed.
 
 ## What you get
 
@@ -21,12 +24,15 @@ write from the official app, are very welcome.
   temperature, remaining/charging time, charge status, work status,
   alarm code, AC charge power limit (300W/600W).
 
-### Switches and selects (implemented, **not confirmed working** - see below)
+### Switches and selects
 
-- AC output, DC output (the app only exposes these two; USB-A/USB-C/12V
-  DC/Wireless are read-only sub-outputs gated by the DC switch, not
-  independently controllable).
-- Charge upper limit (80-100%), discharge lower limit (0-20%).
+- AC output, DC output (**confirmed working**; the app only exposes
+  these two - USB-A/USB-C/12V DC/Wireless are read-only sub-outputs
+  gated by the DC switch, not independently controllable).
+- Light: off / low / high / SOS (**confirmed working**, new).
+- Charge upper limit (80-100%), discharge lower limit (0-20%)
+  (**unconfirmed** - the write command for this field group hasn't
+  been captured yet, see Known issues).
 
 ## Installation
 
@@ -92,26 +98,43 @@ Incoming notify frames are dispatched purely on `byte[11]` (the frame
 type); see `const.py` for the full field layout of types `0x01`
 (battery/runtime), `0x02` (power flow) and `0x03` (output switches).
 
-Outgoing "set a field" commands (frame type `0x32`) write
-`byte[offset] = 1` (a presence flag) and `byte[offset+1] = value`, at
-the same absolute offsets used by the matching read frame (e.g. offset
-13 for the AC switch, matching `byte[13]` in a type-`0x03` read
-frame). This is implemented in `coordinator.build_set_field_frame()`.
+Outgoing "set a field" commands do **not** share one command type or
+one offset layout with the read frames - each writable page has its
+own frame type and its own compact `(flag, value)` layout, confirmed
+from a real capture (2026-11-07) of the official app:
+
+- Type `0x33` (output switches, mirrors read type `0x03`): 35-byte
+  frame, `dc_switch` flag at byte 12, `ac_switch` flag at byte 14.
+- Type `0x31` (light mode, mirrors read type `0x01`): 28-byte frame,
+  light flag at byte 16 (value 0=off, 1=low, 2=high, 3=SOS).
+- Type `0x32` (power/charge limits, mirrors read type `0x02`): **not
+  yet captured** - `const.py`'s offsets for this one are still a guess
+  carried over from before the real capture, so `charge_upper` /
+  `discharge_lower` should be treated as experimental.
+
+In every case, `byte[offset] = 1` is a presence flag and
+`byte[offset + 1] = value`. The CRC32 covers `bytes[12 : 12 +
+payload_len - 1]` only; right after that comes a fixed `0x4E` marker
+byte, then the frame ends with a fixed `0x4B` terminator - neither of
+which is covered by the CRC. This is implemented in
+`coordinator.build_set_field_frame()`.
 
 ## Known issues
 
-- **Writes are unreliable.** The exact command frame for "set a field"
-  was derived from the app's `SendBluetoothData.l()` method, not from
-  a captured working write, and is likely incomplete or subtly wrong:
-  - With `response=True` ("Write Request"), the device rejects the
-    frame with ATT error `0x0E` (Unlikely Error), even at a correctly
-    negotiated MTU.
-  - With `response=False` ("Write Command"), the device accepts the
-    frame with no error, but does not act on it.
-  - A single successful AC-on write *was* observed early on after
-    fixing the sentinel byte, but has not been reproducible since -
-    something about the command structure (or a required
-    preceding/following command) is still missing.
+- **Charge/discharge limit (and charge-power-limit) writes are still
+  unconfirmed.** Type `0x32`'s field layout hasn't been captured from
+  real traffic yet - if you can grab a `btsnoop_hci.log` (Android
+  Developer options > Enable Bluetooth HCI snoop log) while changing
+  one of these in the official app, that would nail down the last
+  piece. See the AC/DC and light sections above for the method that
+  worked.
+- The device occasionally rejects an otherwise byte-correct write with
+  ATT error `0x0E` ("Unlikely Error") shortly after a fresh
+  connection/MTU exchange - `async_set_field()` retries a few times
+  with a short backoff, which has been enough in testing, but a
+  long-lived connection (like the official app keeps, with a ~700ms
+  heartbeat) would likely be even more reliable than reconnecting per
+  command.
 - bleak's BlueZ backend does not raise the ATT MTU above the default 23
   bytes on its own for this device; `coordinator.py` works around this
   by calling the backend's private `_acquire_mtu()`, since bleak has no
@@ -121,12 +144,10 @@ frame). This is implemented in `coordinator.build_set_field_frame()`.
   standby timeout, AC standby timeout, voice/buzzer toggle, and
   "Hyper Power" mode are not yet exposed as entities, though their
   frame types were identified in the app's code.
+- Device name and charge-power-limit (100-600W) settings from the
+  app's device-settings screen haven't been captured or wired up yet.
 
-If you can capture real BLE traffic from the official app while
-toggling a switch (e.g. with a rooted Android device's
-`btsnoop_hci.log`, or a dedicated BLE sniffer), comparing it against
-`coordinator.build_set_field_frame()`'s output for the same action
-would very likely resolve this. Issues and PRs welcome.
+Issues and PRs welcome.
 
 ## Disclaimer
 

@@ -11,12 +11,17 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import EhomConfigEntry
 from .const import (
     CHARGE_LIMIT_OPTIONS,
+    CMD_SET_LIGHT,
+    CMD_SET_POWER,
     DISCHARGE_LIMIT_OPTIONS,
     DOMAIN,
+    FRAME_LEN_LIGHT,
+    FRAME_LEN_POWER,
+    LIGHT_MODES,
+    OFFSET_CHARGE_LIMIT,
+    OFFSET_DISCHARGE_LIMIT,
+    OFFSET_LIGHT,
 )
-
-OFFSET_CHARGE_LIMIT = 24
-OFFSET_DISCHARGE_LIMIT = 25
 
 SELECTS: tuple[tuple[str, str, int, list[int]], ...] = (
     # (data_key, translation_key, set-field offset, options)
@@ -33,6 +38,7 @@ async def async_setup_entry(
         EhomLimitSelect(coordinator, data_key, translation_key, offset, options, entry.unique_id)
         for data_key, translation_key, offset, options in SELECTS
     )
+    async_add_entities([EhomLightSelect(coordinator, entry.unique_id)])
 
 
 class EhomLimitSelect(CoordinatorEntity, SelectEntity):
@@ -62,6 +68,37 @@ class EhomLimitSelect(CoordinatorEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         value = int(option)
-        await self.coordinator.async_set_field(self._offset, value)
+        await self.coordinator.async_set_field(CMD_SET_POWER, FRAME_LEN_POWER, self._offset, value)
         self.coordinator.data[self._data_key] = value
+        self.coordinator.async_set_updated_data(self.coordinator.data)
+
+
+class EhomLightSelect(CoordinatorEntity, SelectEntity):
+    """The EHOM's built-in light: off / low / high / SOS (strobe)."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "light_mode"
+    _value_by_name = LIGHT_MODES
+    _name_by_value = {v: k for k, v in LIGHT_MODES.items()}
+
+    def __init__(self, coordinator, address) -> None:
+        super().__init__(coordinator)
+        self.entity_description = SelectEntityDescription(key="light_mode", translation_key="light_mode")
+        self._attr_options = list(LIGHT_MODES)
+        self._attr_unique_id = f"{address}_light_mode"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, address or coordinator.address)},
+            name="EHOM Power Station",
+            manufacturer="Loncin",
+        )
+
+    @property
+    def current_option(self) -> str | None:
+        value = self.coordinator.data.get("light_mode")
+        return None if value is None else self._name_by_value.get(value)
+
+    async def async_select_option(self, option: str) -> None:
+        value = self._value_by_name[option]
+        await self.coordinator.async_set_field(CMD_SET_LIGHT, FRAME_LEN_LIGHT, OFFSET_LIGHT, value)
+        self.coordinator.data["light_mode"] = value
         self.coordinator.async_set_updated_data(self.coordinator.data)

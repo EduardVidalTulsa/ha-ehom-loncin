@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import zlib
 
 from bleak import BleakClient
 from bleak.backends.device import BLEDevice
+from bleak.exc import BleakError
 from bleak_retry_connector import establish_connection
 
 from homeassistant.components import bluetooth
@@ -17,7 +19,6 @@ from .const import (
     BOOL_FIELDS,
     CHAR_NOTIFY,
     CHAR_WRITE,
-    CMD_SET_FIELD,
     FRAME_FIELD_MAP,
     FRAME_SENTINEL,
 )
@@ -53,10 +54,15 @@ def parse_frame(data: bytes) -> dict[str, int] | None:
     return result
 
 
-def build_set_field_frame(offset: int, value: int) -> bytes:
-    """Build a 'set field' (type 0x32) command frame, as SendBluetoothData.l()."""
-    total_len = 25
-    payload_len = 12
+def build_set_field_frame(cmd_type: int, total_len: int, offset: int, value: int) -> bytes:
+    """Build a 'set field' command frame for the given write page.
+
+    Confirmed against a real btsnoop_hci.log capture of the official app
+    (2026-11-07): the CRC32 covers bytes[12 : 12 + payload_len - 1], the
+    byte right after that is a fixed 0x4E marker, and the frame ends with
+    a fixed 0x4B terminator - neither of which is covered by the CRC.
+    """
+    payload_len = total_len - 13
     frame = bytearray(total_len)
     frame[0] = FRAME_SENTINEL
     frame[1] = 0x3A
@@ -65,7 +71,7 @@ def build_set_field_frame(offset: int, value: int) -> bytes:
     frame[8] = 1
     frame[9] = 1
     frame[10] = 1
-    frame[11] = CMD_SET_FIELD
+    frame[11] = cmd_type
     frame[offset] = 1
     frame[offset + 1] = value & 0xFF
     crc = zlib.crc32(bytes(frame[12 : 12 + payload_len - 1])) & 0xFFFFFFFF
@@ -73,6 +79,8 @@ def build_set_field_frame(offset: int, value: int) -> bytes:
     frame[5] = (crc >> 16) & 0xFF
     frame[6] = (crc >> 8) & 0xFF
     frame[7] = crc & 0xFF
+    frame[12 + payload_len - 1] = 0x4E
+    frame[-1] = 0x4B
     return bytes(frame)
 
 
@@ -140,15 +148,39 @@ class EhomCoordinator(DataUpdateCoordinator[dict[str, int]]):
         self.data.update(parsed)
         self.async_set_updated_data(self.data)
 
-    async def async_set_field(self, offset: int, value: int) -> None:
-        """Send a 'set field' command, e.g. offset=13 (AC switch), value=1."""
-        if not self.connected:
-            await self.async_connect()
-        assert self._client is not None
-        frame = build_set_field_frame(offset, value)
-        # response=True ("Write Request") gets rejected by this device with
-        # ATT error 0x0E (Unlikely Error) even at a correctly raised MTU, so
-        # despite the characteristic advertising the 'write' property, use
-        # an unacknowledged write here instead.
-        await self._client.write_gatt_char(CHAR_WRITE, frame, response=False)
-        _LOGGER.debug("Sent EHOM set-field offset=%s value=%s frame=%s", offset, value, frame.hex())
+    async def async_set_field(self, cmd_type: int, total_len: int, offset: int, value: int) -> None:
+        """Send a 'set field' command, e.g. the AC switch on the output page."""
+        frame = build_set_field_frame(cmd_type, total_len, offset, value)
+        # Write Request (response=True) is what the official app uses, and
+        # it works once the frame content is correct and the MTU has been
+        # raised above the BlueZ default (see async_connect). In practice
+        # the device still occasionally rejects an otherwise-correct write
+        # with ATT error 0x0E ("Unlikely Error") shortly after a fresh
+        # connection/MTU exchange - the official app has the same issue
+        # (hence it keeps a long-lived connection and a heartbeat instead
+        # of reconnecting per command). Retry a few times before giving up.
+        last_error: Exception | None = None
+        for attempt in range(4):
+            if not self.connected:
+                await self.async_connect()
+            assert self._client is not None
+            try:
+                await self._client.write_gatt_char(CHAR_WRITE, frame, response=True)
+            except BleakError as err:
+                last_error = err
+                _LOGGER.debug(
+                    "EHOM set-field write attempt %s failed (%s), retrying", attempt + 1, err
+                )
+                await asyncio.sleep(0.5 * (attempt + 1))
+                continue
+            _LOGGER.debug(
+                "Sent EHOM set-field cmd=%#x offset=%s value=%s frame=%s (attempt %s)",
+                cmd_type,
+                offset,
+                value,
+                frame.hex(),
+                attempt + 1,
+            )
+            return
+        assert last_error is not None
+        raise last_error

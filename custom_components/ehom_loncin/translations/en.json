@@ -39,7 +39,16 @@
     },
     "select": {
       "charge_limit": { "name": "Límit càrrega" },
-      "discharge_limit": { "name": "Límit descàrrega" }
+      "discharge_limit": { "name": "Límit descàrrega" },
+      "light_mode": {
+        "name": "Llum",
+        "state": {
+          "off": "Apagada",
+          "low": "Baixa",
+          "high": "Alta",
+          "sos": "SOS"
+        }
+      }
     }
   }
 }
