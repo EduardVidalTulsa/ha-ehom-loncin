@@ -4,11 +4,12 @@
   "bluetooth": [
     { "service_uuid": "0000a002-0000-1000-8000-00805f9b34fb" }
   ],
-  "codeowners": [],
+  "codeowners": ["@EduardVidalTulsa"],
   "config_flow": true,
-  "documentation": "",
+  "documentation": "https://github.com/EduardVidalTulsa/ha-ehom-loncin",
+  "issue_tracker": "https://github.com/EduardVidalTulsa/ha-ehom-loncin/issues",
   "integration_type": "device",
   "iot_class": "local_push",
   "requirements": [],
-  "version": "0.2.0"
+  "version": "0.3.0"
 }
