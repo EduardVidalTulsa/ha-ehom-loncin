@@ -161,15 +161,16 @@ class EhomCoordinator(DataUpdateCoordinator[dict[str, int]]):
         # of reconnecting per command). Retry a few times before giving up.
         last_error: Exception | None = None
         for attempt in range(4):
-            if not self.connected:
-                await self.async_connect()
-            assert self._client is not None
             try:
+                if not self.connected:
+                    await self.async_connect()
+                assert self._client is not None
                 await self._client.write_gatt_char(CHAR_WRITE, frame, response=True)
             except BleakError as err:
                 last_error = err
+                self._client = None
                 _LOGGER.debug(
-                    "EHOM set-field write attempt %s failed (%s), retrying", attempt + 1, err
+                    "EHOM set-field attempt %s failed (%s), retrying", attempt + 1, err
                 )
                 await asyncio.sleep(0.5 * (attempt + 1))
                 continue
