@@ -149,6 +149,54 @@ which is covered by the CRC. This is implemented in
 
 Issues and PRs welcome.
 
+## Capturing your own traffic (if this doesn't work for your device)
+
+The offsets and command bytes above were confirmed on one specific
+device (an EHOM EP600, app version as of 2026-11) over about an hour of
+trial and error. If your writes fail, it's quite possible your
+device's firmware or app version numbers fields differently - the
+*method* below is more reusable than the exact byte values.
+
+What **didn't** work well: an external nRF52840 BLE sniffer (the
+`nrfutil ble-sniffer` / Wireshark route). It's the "proper" way to
+sniff BLE on paper, but following a connection reliably requires the
+sniffer to catch the exact `CONNECT_IND` packet when the central
+initiates the link, which is a narrow timing window - most of an
+evening went into fighting with that for comparatively little payoff.
+
+What **did** work, in under 20 minutes once set up: Android's own
+**Bluetooth HCI snoop log**, since you already have the app running on
+a phone/tablet anyway.
+
+1. On the Android device running the Loncin app: Settings > About
+   phone > tap "Build number" 7 times to unlock Developer options.
+2. Settings > Developer options > "Enable Bluetooth HCI snoop log" >
+   choose **Enabled** (not "Enabled Filtered" - you want everything).
+3. Toggle Bluetooth off and on (`adb shell svc bluetooth disable` then
+   `enable`, or just the Quick Settings tile) so the logger actually
+   starts - the setting doesn't apply to an already-running Bluetooth
+   stack.
+4. Open the Loncin app, connect to the device, and do *one* clean
+   action at a time (e.g. toggle AC off, wait a couple of seconds,
+   toggle it back on) - the cleaner the action sequence, the easier it
+   is to spot the matching frame afterwards.
+5. Pull the log. The file lives at `/data/log/bt/btsnoop_hci.log` (or
+   `/data/misc/bluetooth/logs/btsnoop_hci.log` on some versions), which
+   `adb shell` can't read directly on a non-rooted device - instead run
+   `adb bugreport out.zip` and extract
+   `FS/data/log/bt/btsnoop_hci.log` from the resulting zip.
+6. Open it with `tshark` or Wireshark and filter for the write
+   characteristic's ATT writes:
+   `tshark -r btsnoop_hci.log -Y "btatt.opcode == 0x12 || btatt.opcode == 0x52" -T fields -e frame.time_relative -e btatt.handle -e btatt.value`
+7. Match the timestamps to what you did in step 4. `byte[11]` is the
+   frame type, `byte[3] + 1` is the payload length, and from there
+   it's the same `(flag, value)` layout described above - just find
+   which byte flips between your "before" and "after" captures.
+
+If you do this for the charge-power-limit or charge/discharge-limit
+sliders (the ones this integration doesn't control yet), please open
+an issue or PR with the captured bytes - see Known issues above.
+
 ## Disclaimer
 
 Unofficial, reverse-engineered integration with no affiliation to
