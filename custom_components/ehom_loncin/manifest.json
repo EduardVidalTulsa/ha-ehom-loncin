@@ -8,9 +8,9 @@
   "config_flow": true,
   "dependencies": ["bluetooth"],
   "documentation": "https://github.com/EduardVidalTulsa/ha-ehom-loncin",
-  "issue_tracker": "https://github.com/EduardVidalTulsa/ha-ehom-loncin/issues",
   "integration_type": "device",
   "iot_class": "local_push",
+  "issue_tracker": "https://github.com/EduardVidalTulsa/ha-ehom-loncin/issues",
   "requirements": [],
   "version": "0.3.0"
 }
