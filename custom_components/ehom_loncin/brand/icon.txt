@@ -1,1 +1,0 @@
-mdi:battery-charging-high

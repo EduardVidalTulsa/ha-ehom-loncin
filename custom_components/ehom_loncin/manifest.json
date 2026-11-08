@@ -6,6 +6,7 @@
   ],
   "codeowners": ["@EduardVidalTulsa"],
   "config_flow": true,
+  "dependencies": ["bluetooth"],
   "documentation": "https://github.com/EduardVidalTulsa/ha-ehom-loncin",
   "issue_tracker": "https://github.com/EduardVidalTulsa/ha-ehom-loncin/issues",
   "integration_type": "device",
